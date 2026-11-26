@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Local runtime state, samples, and private config (never commit)
+state/
+samples/
+local_config/
+*.local.json
+*.local.yaml
+capture_targets.json
+*.sqlite3
+*.db
+
+# Raw document artifacts (prevent accidental PII/document leaks)
+*.png
+*.jpg
+*.jpeg
+*.webp
+*.tif
+*.tiff
+*.pdf
