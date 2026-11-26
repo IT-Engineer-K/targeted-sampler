@@ -131,6 +131,10 @@ class SamplerState:
     def fingerprints(self) -> frozenset[str]:
         return frozenset(r.fingerprint for r in self.records)
 
+    @property
+    def sample_ids(self) -> frozenset[str]:
+        return frozenset(r.sample_id for r in self.records)
+
     def records_in_bucket(self, bucket: BucketKey) -> list[SampleRecord]:
         return [r for r in self.records if r.bucket == bucket]
 

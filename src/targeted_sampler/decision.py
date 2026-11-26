@@ -71,6 +71,15 @@ def should_capture(
             matched_target=target_name,
         )
 
+    # Deduplicate by sample_id to prevent overwriting existing (possibly pinned) samples
+    if event.sample_id in state.sample_ids:
+        return CaptureDecision(
+            capture=False,
+            reason="duplicate_sample_id",
+            effective_bucket_limit=limit,
+            matched_target=target_name,
+        )
+
     # Optional single-blocker-only mode unless overridden by target force_capture
     if cfg.single_blocker_only and not event.bucket.single_blocker:
         if target is None or not target.force_capture:

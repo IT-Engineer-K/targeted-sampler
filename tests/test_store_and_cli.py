@@ -149,6 +149,62 @@ class TestSampleStoreAndCLI(unittest.TestCase):
             self.assertEqual(outcome.decision.reason, "storage_io_error")
             self.assertIsNotNone(outcome.warning)
 
+    def test_p0_path_traversal_blocked_during_eviction(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            outside = Path(tmp) / "outside.txt"
+            outside.write_text("do-not-delete", encoding="utf-8")
+            root = Path(tmp) / "samples"
+            store = SampleStore(root_dir=root, config=CaptureConfig(bucket_limit=1))
+            bucket = BucketKey("receipt", True, "items", "sum_mismatch")
+            ev1 = SampleEvent("s1", bucket, compute_fingerprint(b"1"), 1, "2026-11-26T00:00:01+00:00")
+            store.safe_record(ev1, artifact_bytes=b"1")
+            # Tamper metadata to point outside root_dir
+            meta_file = root / "meta" / "s1.json"
+            data = json.loads(meta_file.read_text(encoding="utf-8"))
+            data["artifact_relpath"] = "../outside.txt"
+            meta_file.write_text(json.dumps(data), encoding="utf-8")
+
+            ev2 = SampleEvent("s2", bucket, compute_fingerprint(b"2"), 1, "2026-11-26T00:00:02+00:00")
+            res = store.safe_record(ev2, artifact_bytes=b"2")
+            self.assertTrue(res.stored)
+            self.assertTrue(outside.exists(), "Outside file must never be deleted by path traversal")
+
+    def test_p0_duplicate_sample_id_and_filename_collision_protect_pin(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "samples"
+            store = SampleStore(root_dir=root, config=CaptureConfig(bucket_limit=5))
+            bucket = BucketKey("receipt", True, "items", "sum_mismatch")
+            ev_pin = SampleEvent("doc_1", bucket, compute_fingerprint(b"pin"), 3, "2026-11-26T00:00:01+00:00")
+            self.assertTrue(store.safe_record(ev_pin, artifact_bytes=b"pin", pinned=True).stored)
+
+            # Same sample_id with different fingerprint must be rejected
+            ev_dup = SampleEvent("doc_1", bucket, compute_fingerprint(b"other"), 5, "2026-11-26T00:00:02+00:00")
+            dup_out = store.safe_record(ev_dup, artifact_bytes=b"other")
+            self.assertFalse(dup_out.stored)
+            self.assertEqual(dup_out.decision.reason, "duplicate_sample_id")
+            self.assertEqual((root / "artifacts" / "doc_1.bin").read_bytes(), b"pin")
+
+            # Colliding raw sample_id ("doc/1") must not overwrite "doc_1"
+            ev_slash = SampleEvent("doc/1", bucket, compute_fingerprint(b"slash"), 5, "2026-11-26T00:00:03+00:00")
+            slash_out = store.safe_record(ev_slash, artifact_bytes=b"slash")
+            self.assertTrue(slash_out.stored)
+            self.assertEqual((root / "artifacts" / "doc_1.bin").read_bytes(), b"pin")
+
+    def test_p0_write_failure_does_not_evict_existing_samples(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "samples"
+            store = SampleStore(root_dir=root, config=CaptureConfig(bucket_limit=1))
+            bucket = BucketKey("receipt", True, "items", "sum_mismatch")
+            ev1 = SampleEvent("keep-me", bucket, compute_fingerprint(b"1"), 1, "2026-11-26T00:00:01+00:00")
+            self.assertTrue(store.safe_record(ev1, artifact_bytes=b"1").stored)
+
+            ev2 = SampleEvent("fail-me", bucket, compute_fingerprint(b"2"), 1, "2026-11-26T00:00:02+00:00")
+            with mock.patch.object(SampleStore, "_atomic_write_bytes", side_effect=OSError("disk full")):
+                out = store.safe_record(ev2, artifact_bytes=b"2")
+            self.assertFalse(out.stored)
+            self.assertTrue((root / "meta" / "keep-me.json").exists())
+            self.assertTrue((root / "artifacts" / "keep-me.bin").exists())
+
 
 if __name__ == "__main__":
     unittest.main()

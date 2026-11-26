@@ -7,6 +7,7 @@ name = "targeted-sampler"
 version = "0.1.0"
 description = "Stratified, reason-bucketed sample collector with pinning, deduplication, and disk-budget rotation."
 readme = "README.md"
+license = { text = "MIT" }
 requires-python = ">=3.10"
 dependencies = []
 
